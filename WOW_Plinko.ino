@@ -1,142 +1,133 @@
 /*
- Plinko exhibit for Kid's museum
- Nathan Seidle
- SparkFun Electronics
- September, 20th, 2016
+  Plinko exhibit for Kid's museum
+  Nathan Seidle
+  SparkFun Electronics
+  September, 20th, 2016
 
- A ball is dropped into a clear box. It hits a series of horizontal bars and falls down through one
- of six rings (red, green, orange, so on). The ball triggers a photo gate which causes the color of 
- the box to change to the color of the ring the ball fell through. 
- 
- Original code by David Farquharson
+  A ball is dropped into a clear box. It hits a series of horizontal bars and falls down through one
+  of six rings (red, green, orange, so on). The ball triggers a photo gate which causes the color of
+  the box to change to the color of the ring the ball fell through.
+
+  To troubleshoot:
+  The IR receivers are transistors. You can back drive them to test if
+  there are connection problems with a simple write HIGH/LOW routine.
+
+  There is something weird with how the IR transistors are wired. The array
+  will go to zero from time to time. By setting the pin
+
+
+
+  Original code by David Farquharson
 */
 
 #include <SimpleTimer.h> //https://github.com/jfturcot/SimpleTimer
 
-int ledPin[] = {9, 10, 11}; //Connected to Red/Green/Blue channels of LED strips via transistors 
+//int ledPin[] = {9, 10, 11}; //Connected to Red/Green/Blue channels of LED strips via transistors
+
+#define LED_RED 9
+#define LED_GREEN 10
+#define LED_BLUE 11
+
+
 
 // here is where we define the buttons that we'll use. button "1" is the first, button "6" is the 6th, etc
-byte buttons[] = {0, A0, A1, A2, A3, A4, A5};
+byte buttons[] = {A0, A1, A2, A3, A4, A5};
 
 // This handy macro lets us determine how big the array up above is, by checking the size
-#define NUMBUTTONS sizeof(buttons)
+//#define NUMBUTTONS sizeof(buttons)
+#define NUMBUTTONS 6
 
-// we will track if a button is just pressed, just released, or 'pressed' (the current state
-volatile byte pressed[NUMBUTTONS], justpressed[NUMBUTTONS], justreleased[NUMBUTTONS];
+
+//We take an average reading at start up
+//If we vary from these readings more than 30 then channel is blocked
+int unblockedValue[NUMBUTTONS];
+
+int blockedValue = 22;
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   Serial.print("Number of buttons: ");
   Serial.println(NUMBUTTONS, DEC);
 
-  for (int i = 0; i < 3; i++)
-  {
-    pinMode(ledPin[i], OUTPUT);   // sets the pin as output
-  }
+    pinMode(LED_RED, OUTPUT);   // sets the pin as output
+    pinMode(LED_GREEN, OUTPUT);   // sets the pin as output
+    pinMode(LED_BLUE, OUTPUT);   // sets the pin as output
+
+  //Blink test
+  /*for(int x = 0 ; x < NUMBUTTONS ; x++)
+    pinMode(buttons[x], OUTPUT);
+
+    while(1)
+    {
+    for(int x = 0 ; x < NUMBUTTONS ; x++)
+      digitalWrite(buttons[x], HIGH);
+    delay(1000);
+
+    for(int x = 0 ; x < NUMBUTTONS ; x++)
+      digitalWrite(buttons[x], LOW);
+    delay(1000);
+
+    Serial.println("Blink test");
+    }*/
+
 
   // Make input & enable pull-up resistors on switch pins
   for (int i = 0; i < NUMBUTTONS; i++)
   {
     pinMode(buttons[i], INPUT);
-    digitalWrite(buttons[i], LOW); //************was HIGH
-  }
+    //digitalWrite(buttons[i], LOW);
 
-  TCCR2A = 0;
-  TCCR2B = 1 << CS22 | 1 << CS21 | 1 << CS20;
-
-  //Timer2 Overflow Interrupt Enable
-  TIMSK2 |= 1 << TOIE2;
-
-}
-
-SIGNAL(TIMER2_OVF_vect)
-{
-  check_switches();
-}
-
-void check_switches()
-{
-  static byte previousstate[NUMBUTTONS];
-  static byte currentstate[NUMBUTTONS];
-
-  for (byte index = 0; index < NUMBUTTONS; index++)
-  {
-    currentstate[index] = digitalRead(buttons[index]); //Read the button
-
-    if (currentstate[index] == previousstate[index])
-    {
-      if ((pressed[index] == LOW) && (currentstate[index] == LOW))
-      {
-        // just pressed
-        justpressed[index] = 1;
-      }
-      else if ((pressed[index] == HIGH) && (currentstate[index] == HIGH))
-      {
-        // just released
-        justreleased[index] = 1;
-      }
-      pressed[index] = !currentstate[index];  // remember, digital HIGH means NOT pressed
-    }
-    //Serial.println(pressed[index], DEC);
-    previousstate[index] = currentstate[index];   // keep a running tally of the buttons
+    unblockedValue[i] = averageAnalogRead(buttons[i]);
   }
 }
 
 
 void loop()
 {
-  timer.run(); //Update any timers we are running
+  int currentValue[NUMBUTTONS]; //Temp storage of most recent analog readings
 
-  if(digitalRead(button[0] == 
-
-  //not sure why but it kept jumping to 0, so setting a blank kept it from always going to purple.
-  if (justpressed[0])
+  for (int x = 0 ; x < NUMBUTTONS ; x++)
   {
-    justpressed[0] = 0;
-    Serial.println("why?");
+    currentValue[x] = averageAnalogRead(buttons[x]);
+
+    Serial.print(" ");
+    Serial.print(x);
+    Serial.print("[");
+    Serial.print(currentValue[x]);
+    Serial.print("] ");
   }
 
-  if (justpressed[1])
+  for (int x = 0 ; x < NUMBUTTONS ; x++)
   {
-    justpressed[1] = 0;
-    Serial.println("purple");
-    purple();
+    int currentDelta = abs(unblockedValue[x] - currentValue[x]);
+    
+    if (currentDelta > 20)
+    {
+      turnOnColor(x); //This channel is being blocked! Light it up!
+
+      break;
+    }
   }
 
-  if (justpressed[2])
-  {
-    justpressed[2] = 0;
-    Serial.println("yellow");
-    yellow();
-  }
+  Serial.println();
 
-  if (justpressed[3])
-  {
-    justpressed[3] = 0;
-    Serial.println("blue");
-    blue();
-  }
+  delay(50);
 
-  if (justpressed[4])
-  {
-    justpressed[4] = 0;
-    Serial.println("green");
-    green();
-  }
+}
 
-  if (justpressed[5])
-  {
-    justpressed[5] = 0;
-    Serial.println("orange");
-    orange();
-  }
 
-  if (justpressed[6])
-  {
-    justpressed[6] = 0;
-    Serial.println("red");
-    red();
-  }
+//Takes an average of readings on a given pin
+//Returns the average
+int averageAnalogRead(byte pinToRead)
+{
+  byte numberOfReadings = 8;
+  unsigned int runningValue = 0; 
+
+  for(int x = 0 ; x < numberOfReadings ; x++)
+    runningValue += analogRead(pinToRead);
+  runningValue /= numberOfReadings;
+
+  return(runningValue);  
 }
